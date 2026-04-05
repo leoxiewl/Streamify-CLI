@@ -158,46 +158,31 @@ class YtdlpBackend:
                         return DownloadResult(success=True, file_paths=[str(mp3_path)], title=title)
                 return DownloadResult(success=True, file_paths=[str(m4a_files[0])] if m4a_files else [], title=title)
             else:
-                # Video mode: download video and audio separately
-                video_files = []
-                audio_files = []
-
-                # Download video only (no postprocessors)
-                video_opts = {**opts, "format": "bestvideo/best"}
-                video_opts.pop("postprocessors", None)
+                # Video mode: download best quality and merge video+audio
+                video_opts = {**opts}
+                # Don't extract audio in video mode — keep the merged file intact
+                video_opts["postprocessors"] = []
+                # Use fixed .mp4 extension to avoid %(ext)s being resolved to format codes (e.g. .f30102.mp4)
+                video_opts["outtmpl"] = str(output_dir / "%(title)s.mp4")
+                # Prefer h264+aac for QuickTime/macOS compatibility; fall back gracefully
+                video_opts["format"] = (
+                    "bestvideo[vcodec^=avc1]+bestaudio[acodec^=mp4a]/"
+                    "bestvideo[vcodec^=avc1]+bestaudio/"
+                    "best"
+                )
+                video_opts["merge_output_format"] = "mp4"
                 with progress:
                     with yt_dlp.YoutubeDL(video_opts) as ydl:
                         ydl.extract_info(url, download=True)
-                # Find video file
+                # Find the merged file — glob by extension, not by title
+                # (yt-dlp may sanitize the title, making title-based glob unreliable)
                 for ext in ["mp4", "mkv", "webm", "avi"]:
-                    found = list(output_dir.glob(f"{title}.*.{ext}"))
+                    found = list(output_dir.glob(f"*.{ext}"))
                     if found:
-                        video_files.extend([str(f) for f in found])
-                        break
-
-                # Download audio with conversion to MP3
-                audio_opts = {**opts, "format": "bestaudio/best"}
-                with progress:
-                    with yt_dlp.YoutubeDL(audio_opts) as ydl:
-                        ydl.extract_info(url, download=True)
-                # Find MP3 file
-                mp3_files = list(output_dir.glob(f"{title}.*.mp3"))
-                if mp3_files:
-                    audio_files = [str(f) for f in mp3_files]
-                else:
-                    # Fallback to m4a
-                    m4a_files = list(output_dir.glob(f"{title}.*.m4a"))
-                    audio_files = [str(f) for f in m4a_files]
-
-                all_files = video_files + audio_files
-                return DownloadResult(success=True, file_paths=all_files, title=title)
-
-        except yt_dlp.utils.DownloadError as e:
-            error_msg = str(e)
-            hint = _get_error_hint(error_msg, url)
-            return DownloadResult(success=False, error=f"{error_msg}\n{hint}" if hint else error_msg)
-        except Exception as e:
-            return DownloadResult(success=False, error=str(e))
+                        # Use most recently modified file
+                        latest = max(found, key=lambda f: f.stat().st_mtime)
+                        return DownloadResult(success=True, file_paths=[str(latest)], title=title)
+                return DownloadResult(success=False, error="No video file found after download")
 
         except yt_dlp.utils.DownloadError as e:
             error_msg = str(e)
