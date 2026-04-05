@@ -10,7 +10,12 @@ from rich.console import Console
 from rich.table import Table
 
 from streamify.core.url_router import route_url
-from streamify.core.ytdlp_backend import YtdlpBackend, build_download_opts
+from streamify.core.ytdlp_backend import (
+    YtdlpBackend,
+    TranscriptResult,
+    build_download_opts,
+    build_transcript_opts,
+)
 
 app = typer.Typer(
     name="streamify",
@@ -96,6 +101,91 @@ def download(
             console.print(f"[green]  File:[/green] {fp}")
     else:
         console.print(f"\n[red]✗ Download failed:[/red] {result.error}")
+        raise typer.Exit(code=1)
+
+
+@app.command()
+def transcript(
+    url: Annotated[str, typer.Argument(help="Bilibili video URL")],
+    lang: Annotated[
+        str,
+        typer.Option("--lang", "-l", help="Comma-separated language list, first available is used"),
+    ] = "zh-Hans,zh-CN,zh,en",
+    output: Annotated[
+        Optional[Path],
+        typer.Option("-o", "--output", help="Output file path (default: 字幕<title>.md in video directory)"),
+    ] = None,
+    cookies_from_browser: Annotated[
+        Optional[str],
+        typer.Option("--cookies-from-browser", help="Browser to read cookies from"),
+    ] = None,
+    cookies_file: Annotated[
+        Optional[Path],
+        typer.Option("--cookies", help="Path to Netscape cookie file"),
+    ] = None,
+    proxy: Annotated[
+        Optional[str],
+        typer.Option("--proxy", help="Proxy URL"),
+    ] = None,
+):
+    """Extract plain-text transcript from a Bilibili video."""
+    route = route_url(url)
+
+    if route.platform == "unknown":
+        console.print("[yellow]⚠ Unrecognized URL platform. Will try anyway.[/yellow]")
+    elif route.platform != "bilibili":
+        console.print(
+            f"[yellow]⚠ transcript command is optimized for Bilibili. Detected: {route.platform}[/yellow]"
+        )
+
+    langs = [l.strip() for l in lang.split(",")]
+
+    opts = build_transcript_opts(
+        cookies_from_browser=cookies_from_browser,
+        cookies_file=str(cookies_file) if cookies_file else None,
+        langs=langs,
+        proxy=proxy,
+        platform=route.platform,
+    )
+
+    # Inject Bilibili-specific headers from route
+    for k, v in route.ytdlp_extra_opts.items():
+        if k in ("referer", "http_headers"):
+            if k in opts:
+                opts[k].update(v)
+            else:
+                opts[k] = v
+
+    # output_dir is for audio fallback — always use video's default directory
+    output_dir = route.default_output_dir
+
+    backend = YtdlpBackend()
+    result = backend.extract_transcript(url, opts, output_dir=output_dir)
+
+    if result.success:
+        # Default filename: 字幕<title>.md in the video's output directory
+        if output is None and result.title:
+            safe_title = "".join(c for c in result.title if c not in '<>:"/\\|?*\n')
+            output = output_dir / f"字幕{safe_title}.md"
+        console.print(f"[dim]Title:[/dim] {result.title}")
+        console.print(f"[dim]Language:[/dim] {result.language}")
+        if output:
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_text(result.text)
+            console.print(f"[green]✓ Transcript saved to:[/green] {output}")
+        else:
+            console.print(result.text)
+    else:
+        console.print(f"[yellow]⚠ {result.error}[/yellow]")
+        if result.audio_files:
+            console.print()
+            console.print("[dim]Audio has been downloaded for external transcription:[/dim]")
+            for fp in result.audio_files:
+                console.print(f"  {fp}")
+            console.print()
+            console.print(
+                "[dim]You can upload the audio to[/dim] 讯飞听见 / 通义听悟 / Whisper [dim]to get a transcript.[/dim]"
+            )
         raise typer.Exit(code=1)
 
 

@@ -49,6 +49,7 @@ def route_url(url: str) -> RouteResult:
                     },
                     "writesubtitles": True,
                     "subtitleslangs": ["zh-Hans", "zh-CN", "zh", "en"],
+                    "subtitle_outtmpl": "字幕%(title)s.%(ext)s",
                 },
             )
 
