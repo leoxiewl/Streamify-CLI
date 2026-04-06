@@ -60,6 +60,10 @@ def download(
         bool,
         typer.Option("--list-formats", "-F", help="List available formats and exit"),
     ] = False,
+    playlist: Annotated[
+        bool,
+        typer.Option("--playlist", help="Download all videos in a playlist/series"),
+    ] = False,
 ):
     """Download a video from the given URL."""
     route = route_url(url)
@@ -87,6 +91,19 @@ def download(
 
     if list_formats:
         _show_formats(backend, url, opts)
+        return
+
+    if playlist:
+        console.print(f"[dim]Quality:[/dim]  {quality}")
+        console.print()
+        result = backend.download_playlist(url, opts)
+        if result.failed_count > 0:
+            console.print()
+            console.print("[yellow]Failed videos:[/yellow]")
+            for title, err in result.failures:
+                console.print(f"  • {title}: {err}")
+        if not result.success:
+            raise typer.Exit(code=1)
         return
 
     console.print(f"[dim]Quality:[/dim]  {quality}")

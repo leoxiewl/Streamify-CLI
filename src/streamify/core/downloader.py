@@ -28,3 +28,12 @@ class Downloader(Protocol):
     def download(self, url: str, opts: dict[str, Any]) -> DownloadResult: ...
     def list_formats(self, url: str, opts: dict[str, Any]) -> list[dict[str, Any]]: ...
     def extract_info(self, url: str, opts: dict[str, Any]) -> VideoInfo: ...
+
+
+@dataclass
+class PlaylistDownloadResult:
+    success: bool
+    total: int
+    success_count: int
+    failed_count: int
+    failures: list[tuple[str, str]] = field(default_factory=list)  # [(title, error), ...]

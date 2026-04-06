@@ -177,3 +177,64 @@ def test_transcript_language_option(mock_backend_cls):
         ["transcript", "https://www.bilibili.com/video/BV1test", "-l", "en,zh-Hans"],
     )
     assert result.exit_code == 0
+
+
+@patch("streamify.cli.YtdlpBackend")
+def test_download_playlist_all_success(mock_backend_cls):
+    from streamify.core.downloader import PlaylistDownloadResult
+
+    mock_backend = MagicMock()
+    mock_backend.download_playlist.return_value = PlaylistDownloadResult(
+        success=True,
+        total=3,
+        success_count=3,
+        failed_count=0,
+        failures=[],
+    )
+    mock_backend_cls.return_value = mock_backend
+
+    result = runner.invoke(
+        app,
+        ["download", "https://www.bilibili.com/video/BV17V4y147Nj/", "--playlist"],
+    )
+    assert result.exit_code == 0
+    mock_backend.download_playlist.assert_called_once()
+
+
+@patch("streamify.cli.YtdlpBackend")
+def test_download_playlist_partial_failure(mock_backend_cls):
+    from streamify.core.downloader import PlaylistDownloadResult
+
+    mock_backend = MagicMock()
+    mock_backend.download_playlist.return_value = PlaylistDownloadResult(
+        success=False,
+        total=3,
+        success_count=2,
+        failed_count=1,
+        failures=[("Part 2", "Download failed")],
+    )
+    mock_backend_cls.return_value = mock_backend
+
+    result = runner.invoke(
+        app,
+        ["download", "https://www.bilibili.com/video/BV17V4y147Nj/", "--playlist"],
+    )
+    assert result.exit_code == 1
+    assert "Failed videos" in result.output
+    assert "Part 2" in result.output
+
+
+@patch("streamify.cli.YtdlpBackend")
+def test_download_playlist_flag_hidden_for_normal(mock_backend_cls):
+    """Without --playlist flag, download_playlist should not be called."""
+    mock_backend = MagicMock()
+    mock_backend.download.return_value = MagicMock(success=True, file_paths=["/tmp/test.mp4"], title="Test")
+    mock_backend_cls.return_value = mock_backend
+
+    result = runner.invoke(
+        app,
+        ["download", "https://www.bilibili.com/video/BV1test"],
+    )
+    assert result.exit_code == 0
+    mock_backend.download_playlist.assert_not_called()
+    mock_backend.download.assert_called_once()
