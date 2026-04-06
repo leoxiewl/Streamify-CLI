@@ -11,7 +11,7 @@ import yt_dlp
 from yt_dlp.networking.impersonate import ImpersonateTarget
 
 from streamify.auth.session import get_bilibili_cookie_path, has_valid_bilibili_cookies
-from streamify.core.downloader import DownloadResult, VideoInfo
+from streamify.core.downloader import DownloadResult, PlaylistDownloadResult, VideoInfo
 from streamify.core.url_router import BILIBILI_PATTERNS
 from streamify.progress import console, create_progress, make_progress_hook
 
@@ -391,6 +391,103 @@ class YtdlpBackend:
             return [str(f) for f in m4a_files]
         except Exception:
             return []
+
+    def download_playlist(
+        self,
+        url: str,
+        opts: dict[str, Any],
+    ) -> PlaylistDownloadResult:
+        """Download all videos in a playlist. Returns summary of all results."""
+        _check_ffmpeg()
+
+        # Extract playlist info without downloading
+        try:
+            with yt_dlp.YoutubeDL({**opts, "quiet": True, "noprogress": True}) as ydl:
+                info = ydl.extract_info(url, download=False)
+                if info is None:
+                    return PlaylistDownloadResult(
+                        success=False,
+                        total=0,
+                        success_count=0,
+                        failed_count=0,
+                        failures=[("Unknown", "Failed to extract playlist info")],
+                    )
+        except Exception as e:
+            return PlaylistDownloadResult(
+                success=False,
+                total=0,
+                success_count=0,
+                failed_count=0,
+                failures=[("Unknown", str(e))],
+            )
+
+        # Check if this is actually a playlist
+        entries = info.get("entries") or []
+        if not entries:
+            # Not a playlist — treat as single video download
+            # Filter out playlist-extraction flags from opts
+            download_opts = {k: v for k, v in opts.items() if k not in ("quiet", "noprogress")}
+            result = self.download(url, download_opts)
+            return PlaylistDownloadResult(
+                success=result.success,
+                total=1,
+                success_count=1 if result.success else 0,
+                failed_count=0 if result.success else 1,
+                failures=[] if result.success else [(result.title or "Unknown", result.error or "Unknown error")],
+            )
+
+        playlist_title = info.get("title", "Playlist")
+        console.print(f"[dim]Playlist:[/dim] {playlist_title} ({len(entries)} videos)")
+        console.print()
+
+        success_count = 0
+        failed_count = 0
+        failures: list[tuple[str, str]] = []
+
+        for i, entry in enumerate(entries, 1):
+            if entry is None:
+                continue
+            # Get the URL for this entry
+            entry_url = entry.get("url") or entry.get("webpage_url")
+            entry_title = entry.get("title") or f"Part {i}"
+            if not entry_url:
+                failures.append((entry_title, "No URL found"))
+                failed_count += 1
+                continue
+
+            console.print(f"[dim][{i}/{len(entries)}][/dim] {entry_title}")
+
+            # Download this entry using the existing download logic
+            entry_progress = create_progress()
+            entry_hook = make_progress_hook(entry_progress)
+            entry_opts = {**opts, "progress_hooks": [entry_hook]}
+
+            try:
+                result = self._try_download(entry_url, entry_opts, entry_progress, opts.get("_audio_only", False))
+                if result.success:
+                    success_count += 1
+                    console.print(f"  [green]✓[/green] {result.file_paths}")
+                else:
+                    failed_count += 1
+                    failures.append((entry_title, result.error or "Unknown error"))
+                    console.print(f"  [red]✗[/red] {result.error}")
+            except Exception as e:
+                failed_count += 1
+                failures.append((entry_title, str(e)))
+                console.print(f"  [red]✗[/red] {e}")
+            finally:
+                entry_progress.stop()
+
+        console.print()
+        console.print(f"[dim]Summary:[/dim] {success_count} succeeded, {failed_count} failed")
+
+        return PlaylistDownloadResult(
+            success=failed_count == 0,
+            total=len(entries),
+            success_count=success_count,
+            failed_count=failed_count,
+            failures=failures,
+        )
 
 
 def build_download_opts(
