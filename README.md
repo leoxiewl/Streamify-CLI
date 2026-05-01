@@ -11,7 +11,7 @@ pip install -e .
 ## Usage
 
 ```bash
-streamify download "https://www.bilibili.com/video/BV1gX9TBzEk9"
+streamify download "https://www.bilibili.com/video/BV"
 ```
 
 ### Options
@@ -31,22 +31,22 @@ streamify download "https://www.bilibili.com/video/BV1gX9TBzEk9"
 
 ```bash
 # Download video (saves as .mp4 + .mp3)
-streamify download "https://www.bilibili.com/video/BV1gX9TBzEk9"
+streamify download "https://www.bilibili.com/video/B"
 
 # Download to specific directory with 1080p quality
-streamify download "https://www.bilibili.com/video/BV1gX9TBzEk9" -o ~/Videos -q 1080
+streamify download "https://www.bilibili.com/video/BV" -o ~/Videos -q 1080
 
 # Download audio only (MP3)
-streamify download "https://www.bilibili.com/video/BV1gX9TBzEk9" --audio-only
+streamify download "https://www.bilibili.com/video/BV" --audio-only
 
 # List available formats
-streamify download "https://www.bilibili.com/video/BV1gX9TBzEk9" -F
+streamify download "https://www.bilibili.com/video/B" -F
 
 # Download with proxy
-streamify download "https://www.bilibili.com/video/BV1gX9TBzEk9" --proxy "socks5://127.0.0.1:1080"
+streamify download "https://www.bilibili.com/video/BV" --proxy "socks5://127.0.0.1:1080"
 
 # Download with cookies from Chrome
-streamify download "https://www.bilibili.com/video/BV1gX9TBzEk9" --cookies-from-browser chrome
+streamify download "https://www.bilibili.com/video/BV1g" --cookies-from-browser chrome
 ```
 
 ### Output Files
