@@ -238,3 +238,98 @@ def test_download_playlist_flag_hidden_for_normal(mock_backend_cls):
     assert result.exit_code == 0
     mock_backend.download_playlist.assert_not_called()
     mock_backend.download.assert_called_once()
+
+
+# --- convert command tests ---
+
+def test_convert_help():
+    result = runner.invoke(app, ["convert", "--help"])
+    assert result.exit_code == 0
+    assert "convert" in result.output.lower()
+
+
+@patch("streamify.cli.ConversionBackend")
+def test_convert_single_file_success(mock_backend_cls, tmp_path):
+    video = tmp_path / "test.mp4"
+    video.write_bytes(b"fake")
+
+    mock_backend = MagicMock()
+    mock_backend.check_ffmpeg.return_value = True
+    mock_backend.convert_to_mp3.return_value = MagicMock(success=True, output_path=str(tmp_path / "test.mp3"))
+    mock_backend_cls.return_value = mock_backend
+
+    result = runner.invoke(app, ["convert", str(video)])
+    assert result.exit_code == 0
+    assert "test.mp3" in result.output
+    mock_backend.convert_to_mp3.assert_called_once()
+
+
+@patch("streamify.cli.ConversionBackend")
+def test_convert_single_file_failure(mock_backend_cls, tmp_path):
+    video = tmp_path / "test.mp4"
+    video.write_bytes(b"fake")
+
+    mock_backend = MagicMock()
+    mock_backend.check_ffmpeg.return_value = True
+    mock_backend.convert_to_mp3.return_value = MagicMock(success=False, error="ffmpeg error")
+    mock_backend_cls.return_value = mock_backend
+
+    result = runner.invoke(app, ["convert", str(video)])
+    assert result.exit_code == 1
+    assert "ffmpeg error" in result.output
+
+
+@patch("streamify.cli.ConversionBackend")
+def test_convert_directory(mock_backend_cls, tmp_path):
+    for name in ["a.mp4", "b.mov"]:
+        (tmp_path / name).write_bytes(b"fake")
+
+    mock_backend = MagicMock()
+    mock_backend.check_ffmpeg.return_value = True
+    mock_backend.find_video_files.return_value = [tmp_path / "a.mp4", tmp_path / "b.mov"]
+    mock_backend.convert_to_mp3.return_value = MagicMock(success=True, output_path="/tmp/out.mp3")
+    mock_backend_cls.return_value = mock_backend
+
+    result = runner.invoke(app, ["convert", str(tmp_path)])
+    assert result.exit_code == 0
+    assert mock_backend.convert_to_mp3.call_count == 2
+    assert "2 converted" in result.output
+
+
+@patch("streamify.cli.ConversionBackend")
+def test_convert_invalid_path(mock_backend_cls):
+    mock_backend = MagicMock()
+    mock_backend.check_ffmpeg.return_value = True
+    mock_backend_cls.return_value = mock_backend
+
+    result = runner.invoke(app, ["convert", "/nonexistent/path/video.mp4"])
+    assert result.exit_code == 1
+    assert "not found" in result.output
+
+
+@patch("streamify.cli.ConversionBackend")
+def test_convert_no_ffmpeg(mock_backend_cls, tmp_path):
+    video = tmp_path / "test.mp4"
+    video.write_bytes(b"fake")
+
+    mock_backend = MagicMock()
+    mock_backend.check_ffmpeg.return_value = False
+    mock_backend_cls.return_value = mock_backend
+
+    result = runner.invoke(app, ["convert", str(video)])
+    assert result.exit_code == 1
+    assert "ffmpeg" in result.output.lower()
+
+
+@patch("streamify.cli.ConversionBackend")
+def test_convert_unsupported_extension(mock_backend_cls, tmp_path):
+    txt = tmp_path / "notes.txt"
+    txt.write_text("hello")
+
+    mock_backend = MagicMock()
+    mock_backend.check_ffmpeg.return_value = True
+    mock_backend_cls.return_value = mock_backend
+
+    result = runner.invoke(app, ["convert", str(txt)])
+    assert result.exit_code == 1
+    assert "not a recognized video format" in result.output

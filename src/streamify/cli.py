@@ -9,6 +9,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from streamify.core.converter import VIDEO_EXTENSIONS, ConversionBackend
 from streamify.core.url_router import route_url
 from streamify.core.ytdlp_backend import (
     YtdlpBackend,
@@ -203,6 +204,71 @@ def transcript(
             console.print(
                 "[dim]You can upload the audio to[/dim] 讯飞听见 / 通义听悟 / Whisper [dim]to get a transcript.[/dim]"
             )
+        raise typer.Exit(code=1)
+
+
+@app.command()
+def convert(
+    path: Annotated[Path, typer.Argument(help="Video file or directory containing video files")],
+    output: Annotated[
+        Optional[Path],
+        typer.Option("-o", "--output", help="Output directory (default: same as input)"),
+    ] = None,
+    quality: Annotated[
+        str,
+        typer.Option("-q", "--quality", help="MP3 quality 0-9, lower is better (default: 2 ≈ 190kbps VBR)"),
+    ] = "2",
+):
+    """Convert local video file(s) to MP3."""
+    backend = ConversionBackend()
+
+    if not backend.check_ffmpeg():
+        console.print("[red]✗ ffmpeg not found. Install: brew install ffmpeg[/red]")
+        raise typer.Exit(code=1)
+
+    if not path.exists():
+        console.print(f"[red]✗ Path not found: {path}[/red]")
+        raise typer.Exit(code=1)
+
+    if path.is_file():
+        if path.suffix.lower() not in VIDEO_EXTENSIONS:
+            console.print(f"[yellow]⚠ '{path.suffix}' is not a recognized video format.[/yellow]")
+            console.print(f"[dim]Supported: {', '.join(sorted(VIDEO_EXTENSIONS))}[/dim]")
+            raise typer.Exit(code=1)
+        files = [path]
+    else:
+        files = backend.find_video_files(path)
+        if not files:
+            console.print(f"[yellow]⚠ No video files found in {path}[/yellow]")
+            raise typer.Exit(code=1)
+        console.print(f"[dim]Found {len(files)} video file(s) in {path}[/dim]")
+        console.print()
+
+    success_count = 0
+    failed_count = 0
+
+    for i, input_file in enumerate(files, 1):
+        out_dir = output if output else input_file.parent
+        output_file = out_dir / f"{input_file.stem}.mp3"
+
+        prefix = f"[dim][{i}/{len(files)}][/dim] " if len(files) > 1 else ""
+        console.print(f"{prefix}{input_file.name}")
+
+        with console.status("  Converting..."):
+            result = backend.convert_to_mp3(input_file, output_file, quality)
+
+        if result.success:
+            console.print(f"  [green]✓[/green] {result.output_path}")
+            success_count += 1
+        else:
+            console.print(f"  [red]✗[/red] {result.error}")
+            failed_count += 1
+
+    if len(files) > 1:
+        console.print()
+        console.print(f"[dim]Summary:[/dim] {success_count} converted, {failed_count} failed")
+
+    if failed_count > 0:
         raise typer.Exit(code=1)
 
 
